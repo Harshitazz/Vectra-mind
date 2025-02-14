@@ -229,7 +229,7 @@ export default function Home() {
         <div className="py-10">
           <div className="flex justify-center items-center  px-4">
             <motion.h1
-              className="relative text-black text-5xl md:text-6xl lg:text-7xl font-extrabold overflow-hidden"
+              className="relative text-black text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold overflow-hidden"
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, ease: "easeOut" }}
@@ -246,7 +246,7 @@ export default function Home() {
           </div>
           <div className="flex justify-center items-center text-center px-4">
             <motion.p
-              className="mt-4 text-lg md:text-xl lg:text-2xl text-gray-600 font-light italic max-w-2xl"
+              className="mt-4 text-base sm:text-lg md:text-xl lg:text-2xl text-gray-600 font-light italic max-w-2xl"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 1, delay: 0.5, ease: "easeOut" }}
@@ -256,7 +256,7 @@ export default function Home() {
             </motion.p>
           </div>
         </div>
-        <div className="max-w-[60%] mx-auto border rounded-xl shadow-lg bg-white">
+        <div className="md:max-w-[60%] mx-auto border rounded-xl shadow-lg bg-white">
           <div className="flex justify-around mb-4">
             <button
               className={`relative px-4 py-2  w-[50%] ${defaults === "Urls" ? "text-black font-semibold border-b-2 border-black bg-slate-50" : "text-gray-500"
