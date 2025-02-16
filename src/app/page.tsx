@@ -22,7 +22,7 @@ export default function Home() {
     setAnswer(""); // Clear previous answers
     setIsLoading(true);
     try {
-      const res = await fetch("http://34.224.215.165:8000/initialize_faiss", {
+      const res = await fetch("https://api.harshita.click/initialize_faiss", {
         method: "POST",
         body: JSON.stringify({ urls }), // No content-type header for multipart/form-data
       });
@@ -45,7 +45,7 @@ export default function Home() {
   const checkTaskStatus = async (taskId: string) => {
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`http://34.224.215.165:8000/task_status/${taskId}`);
+        const res = await fetch(`https://api.harshita.click/task_status/${taskId}`);
         const data = await res.json();
         setStatus(data.status);
 
@@ -140,7 +140,7 @@ export default function Home() {
     if (!question.trim()) return alert("Please enter a question.");
     setIsLoading(true);
     try {
-      const res = await fetch(`http://34.224.215.165:8000/ask`, {
+      const res = await fetch(`https://api.harshita.click/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question }),
@@ -191,7 +191,7 @@ export default function Home() {
     pdfs.forEach((file) => formData.append("files", file));
         setIsLoading(true);
     try {
-      const response = await axios.post("http://34.224.215.165:8000/upload_pdfs/", formData);
+      const response = await axios.post("https://api.harshita.click/upload_pdfs/", formData);
       setTaskId(response.data.task_id);
       setIsLoading(false);
       toast.success("PDFs uploaded successfully! Processing started.");
@@ -209,7 +209,7 @@ export default function Home() {
     }
     setIsLoading(true);
     try {
-      const response = await axios.post("http://34.224.215.165:8000/ask_pdf", { question });
+      const response = await axios.post("https://api.harshita.click/ask_pdf", { question });
       const translatedResponse = await translateText(response.data.answer, selectedLanguage);
       setAnswerPDF(translatedResponse);
       // setAnswer();
