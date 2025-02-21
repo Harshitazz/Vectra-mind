@@ -5,7 +5,12 @@ import { ToastContainer, toast } from "react-toastify";
 import { motion } from "framer-motion";
 import FaissChatbot from "./_components/FaissChatbot";
 import FaissChatbotPDF from "./_components/FaissChatbotPDF";
+import { useUser ,useAuth} from "@clerk/nextjs";
+
+
 export default function Home() {
+  const { isSignedIn, user } = useUser();
+  const { getToken } = useAuth();
   const [urls, setUrls] = useState([""]); // List of URLs
   const [taskId, setTaskId] = useState("");
   const [status, setStatus] = useState("");
@@ -51,7 +56,7 @@ export default function Home() {
 
         if (data.status === "Completed") {
           clearInterval(interval); // Stop polling
-          toast.success("Processing Done! Start asking your Questions.");
+          // toast.success("Processing Done! Start asking your Questions.");
           setIsLoading(false);
         }
       } catch (error) {
@@ -183,23 +188,39 @@ export default function Home() {
   
   const uploadPDFs = async () => {
     if (pdfs.length === 0) {
-      toast.error("Please select at least one PDF file.");
-      return;
+        toast.error("Please select at least one PDF file.");
+        return;
     }
 
     const formData = new FormData();
     pdfs.forEach((file) => formData.append("files", file));
-        setIsLoading(true);
+    setIsLoading(true);
+
     try {
-      const response = await axios.post("https://api.harshita.click/upload_pdfs/", formData);
-      setTaskId(response.data.task_id);
-      setIsLoading(false);
-      toast.success("PDFs uploaded successfully! Processing started.");
+      const token = await getToken({ template: "first" });
+              console.log("Clerk Token:", token);  // ✅ Log token for debugging
+
+        if (!token) {
+            toast.error("Failed to retrieve authentication token.");
+            setIsLoading(false);
+            return;
+        }
+
+        const response = await axios.post("https://api.harshita.click/upload_pdfs/", formData, {
+            headers: {
+                Authorization: `Bearer ${token}`, // ✅ Pass token in headers
+            },
+        });
+
+        setTaskId(response.data.task_id);
+        setIsLoading(false);
+        toast.success("PDFs uploaded successfully! Processing started.");
     } catch (error) {
-      toast.error("Error uploading PDFs. Please try again.");
-      console.error(error);
+        toast.error("Error uploading PDFs. Please try again.");
+        console.error("❌ Upload Error:", error);
     }
-  };
+};
+
 
   // ✅ Ask a question
   const askQuestion = async () => {
@@ -209,7 +230,13 @@ export default function Home() {
     }
     setIsLoading(true);
     try {
-      const response = await axios.post("https://api.harshita.click/ask_pdf", { question });
+      const token = await getToken({ template: "first" });
+
+      const response = await axios.post("https://api.harshita.click/ask_pdf", { question },{
+        headers: {
+          Authorization: `Bearer ${token}`, // ✅ Pass token in headers
+      },
+      });
       const translatedResponse = await translateText(response.data.answer, selectedLanguage);
       setAnswerPDF(translatedResponse);
       // setAnswer();
@@ -224,7 +251,7 @@ export default function Home() {
 
   return (
     <>
-      <div className="min-h-screen bg-gray-100 p-6">
+      <div className="min-h-screen bg-gray-100 ">
         <ToastContainer position="top-right" autoClose={3000} />
         <div className="py-10">
           <div className="flex justify-center items-center  px-4">
