@@ -17,6 +17,8 @@ interface FaissChatbotProps {
     askQuestion: () => void
     pdfs: File[];
     removeFile:(index:number)=>void
+    isProcessingPDF?: boolean;
+    pdfProcessingStatus?: string;
     // setPdfs: (urls: string[]) => void;
 }
 
@@ -36,6 +38,8 @@ const FaissChatbotPDF: React.FC<FaissChatbotProps> = ({
     startSpeechRecognition,
     answer,
     textToSpeech,
+    isProcessingPDF = false,
+    pdfProcessingStatus = "",
 }) => {
     return (
         <div className="relative flex flex-col items-center min-h-[50vh] bg-black text-white p-6">
@@ -75,13 +79,37 @@ const FaissChatbotPDF: React.FC<FaissChatbotProps> = ({
                     Upload PDFs
                 </button>
 
+                {isProcessingPDF && (
+                    <div className="mt-5 p-4 bg-blue-900/30 border border-blue-500 rounded-md">
+                        <div className="flex items-center gap-3">
+                            <Loader2 className="animate-spin text-blue-400" size={20} />
+                            <div className="flex-1">
+                                <p className="text-blue-300 font-semibold">Processing PDFs...</p>
+                                <p className="text-blue-400 text-sm mt-1">
+                                    Status: {pdfProcessingStatus || "Processing..."}
+                                </p>
+                                <p className="text-blue-400/70 text-xs mt-1">
+                                    Please wait. Questions will be enabled once processing is complete.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {!isProcessingPDF && pdfProcessingStatus === "Completed" && taskId && (
+                    <div className="mt-5 p-3 bg-green-900/30 border border-green-500 rounded-md">
+                        <p className="text-green-300 font-semibold">✓ Processing Complete!</p>
+                        <p className="text-green-400 text-sm mt-1">You can now ask questions about your PDFs.</p>
+                    </div>
+                )}
+
                 {taskId &&
                     <div className="mt-5">
                         <select
                             value={selectedLanguage}
                             onChange={(e) => setSelectedLanguage(e.target.value)}
                             className="w-full p-3 bg-gray-800 border border-gray-700 rounded-md text-white"
-                            disabled={isLoading}
+                            disabled={isLoading || isProcessingPDF}
                         >
                             <option value="en">English</option>
                             <option value="hi">Hindi</option>
@@ -91,19 +119,19 @@ const FaissChatbotPDF: React.FC<FaissChatbotProps> = ({
                         </select>
                         <div className="flex items-center mt-3 bg-gray-800 border border-gray-700 rounded-md">
                             <input
-                                className="w-full p-3 bg-transparent text-white outline-none"
+                                className={`w-full p-3 bg-transparent text-white outline-none ${isProcessingPDF ? "opacity-50 cursor-not-allowed" : ""}`}
                                 type="text"
-                                placeholder="Ask a question..."
+                                placeholder={isProcessingPDF ? "Processing PDFs... Please wait" : "Ask a question..."}
                                 value={question}
                                 onChange={(e) => setQuestion(e.target.value)}
-                                disabled={isLoading}
+                                disabled={isLoading || isProcessingPDF}
                             />
                             {/* Voice Input */}
                             <button
                                 className={`p-3 mr-1 ${isRecording ? "bg-red-500" : "bg-blue-500"
-                                    }  text-white transition`}
+                                    }  text-white transition disabled:opacity-50`}
                                 onClick={startSpeechRecognition}
-                                disabled={isLoading}
+                                disabled={isLoading || isProcessingPDF}
                             >
                                 <Mic size={20} className="" />
 
@@ -111,7 +139,8 @@ const FaissChatbotPDF: React.FC<FaissChatbotProps> = ({
                             <button
                                 className="p-3 bg-green-500 hover:bg-green-600 text-white rounded-r-md transition disabled:opacity-50"
                                 onClick={askQuestion}
-                                disabled={isLoading || !question.trim()}
+                                disabled={isLoading || !question.trim() || isProcessingPDF}
+                                title={isProcessingPDF ? "Please wait for PDF processing to complete" : ""}
                             >
                                 <Send size={20} />
                             </button>

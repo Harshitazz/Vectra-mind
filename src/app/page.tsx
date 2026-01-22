@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 import { ToastContainer, toast } from "react-toastify";
 import { motion } from "framer-motion";
@@ -7,6 +7,7 @@ import FaissChatbot from "./_components/FaissChatbot";
 import FaissChatbotPDF from "./_components/FaissChatbotPDF";
 import { useUser ,useAuth} from "@clerk/nextjs";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://news-ai-394571818909.us-central1.run.app";
 
 export default function Home() {
   const { isSignedIn, user } = useUser();
@@ -20,16 +21,17 @@ export default function Home() {
   const [defaults, setDefaults] = useState("Urls");
   const [selectedLanguage, setSelectedLanguage] = useState("en"); // Default language: English
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isProcessingPDF, setIsProcessingPDF] = useState<boolean>(false); // Track PDF processing state
+  const [pdfProcessingStatus, setPdfProcessingStatus] = useState<string>(""); // Track processing status
 
-  // Function to send URLs and PDFs to backend
   const initializeFaiss = async () => {
     setStatus("Initializing...");
     setAnswer(""); // Clear previous answers
     setIsLoading(true);
     try {
-      const res = await fetch("https://api.harshita.click/initialize_faiss", {
+      const res = await fetch(`${API_URL}/initialize_faiss`, {
         method: "POST",
-        body: JSON.stringify({ urls }), // No content-type header for multipart/form-data
+        body: JSON.stringify({ urls }),
       });
 
       const data = await res.json();
@@ -46,38 +48,147 @@ export default function Home() {
     }
   };
 
-  // // Function to poll task status
   const checkTaskStatus = async (taskId: string) => {
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`https://api.harshita.click/task_status/${taskId}`);
+        const res = await fetch(`${API_URL}/task_status/${taskId}`);
         const data = await res.json();
         setStatus(data.status);
 
         if (data.status === "Completed") {
-          clearInterval(interval); // Stop polling
-          // toast.success("Processing Done! Start asking your Questions.");
+          clearInterval(interval);
           setIsLoading(false);
         }
       } catch (error) {
         clearInterval(interval);
         alert("Error checking task status");
       }
-    }, 3000); // Poll every 3 seconds
+    }, 3000);
   };
 
   const [isRecording, setIsRecording] = useState(false);
 
-  const translateText = async (text: string, targetLang: string) => {
-    setIsLoading(true)
+  const splitTextIntoChunks = (text: string, maxLength: number = 450): string[] => {
+    if (text.length <= maxLength) {
+      return [text];
+    }
+
+    const chunks: string[] = [];
+    let currentChunk = '';
+    const sentences = text.split(/([.!?]\s+)/);
+    
+    for (let i = 0; i < sentences.length; i++) {
+      const sentence = sentences[i];
+      if (currentChunk.length + sentence.length > maxLength && currentChunk.length > 0) {
+        chunks.push(currentChunk.trim());
+        currentChunk = sentence;
+      } else {
+        currentChunk += sentence;
+      }
+    }
+
+    if (currentChunk.trim().length > 0) {
+      chunks.push(currentChunk.trim());
+    }
+
+    const finalChunks: string[] = [];
+    for (const chunk of chunks) {
+      if (chunk.length <= maxLength) {
+        finalChunks.push(chunk);
+      } else {
+        const words = chunk.split(/\s+/);
+        let wordChunk = '';
+        for (const word of words) {
+          if (wordChunk.length + word.length + 1 > maxLength && wordChunk.length > 0) {
+            finalChunks.push(wordChunk.trim());
+            wordChunk = word;
+          } else {
+            wordChunk += (wordChunk ? ' ' : '') + word;
+          }
+        }
+        if (wordChunk.trim().length > 0) {
+          finalChunks.push(wordChunk.trim());
+        }
+      }
+    }
+
+    return finalChunks.filter(chunk => chunk.length > 0);
+  };
+
+  const translateWithMyMemory = async (text: string, targetLang: string): Promise<string | null> => {
     try {
-      const response = await axios.get(`https://lingva.ml/api/v1/en/${targetLang}/${encodeURIComponent(text)}`);
-      setIsLoading(false)
-      return response.data.translation;
-    } catch (error) {
-      console.error("Translation error:", error);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      
+      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${targetLang}`;
+      const response = await axios.get(url, {
+        signal: controller.signal,
+        timeout: 8000,
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (response.data?.responseData?.translatedText) {
+        return response.data.responseData.translatedText;
+      }
+      
+      return null;
+    } catch (error: any) {
+      return null;
+    }
+  };
+
+  const translateText = async (text: string, targetLang: string) => {
+    if (targetLang === "en" || !text.trim()) {
       return text;
     }
+
+    const langMap: Record<string, string> = {
+      'hi': 'hi',
+      'es': 'es',
+      'fr': 'fr',
+      'de': 'de',
+      'it': 'it',
+      'pt': 'pt',
+      'ru': 'ru',
+      'ja': 'ja',
+      'zh': 'zh',
+      'ar': 'ar',
+    };
+
+    const mappedLang = langMap[targetLang] || targetLang;
+    const MAX_CHUNK_LENGTH = 450;
+    const chunks = splitTextIntoChunks(text, MAX_CHUNK_LENGTH);
+
+    if (chunks.length === 1) {
+      const translated = await translateWithMyMemory(text, mappedLang);
+      if (translated && translated.trim()) {
+        return translated;
+      }
+    } else {
+      const translatedChunks: string[] = [];
+      for (const chunk of chunks) {
+        const translated = await translateWithMyMemory(chunk, mappedLang);
+        if (translated && translated.trim()) {
+          translatedChunks.push(translated);
+        } else {
+          toast.info("Translation service unavailable. Showing answer in English.", {
+            autoClose: 3000,
+            toastId: 'translation-unavailable',
+          });
+          return text;
+        }
+      }
+      if (translatedChunks.length === chunks.length) {
+        return translatedChunks.join(' ');
+      }
+    }
+
+    toast.info("Translation service unavailable. Showing answer in English.", {
+      autoClose: 3000,
+      toastId: 'translation-unavailable',
+    });
+    return text;
   };
 
 
@@ -92,7 +203,6 @@ export default function Home() {
     const speakNextSentence = () => {
       if (index >= sentences.length) return;
       const utterance = new SpeechSynthesisUtterance(sentences[index]);
-      // Map language codes
       const langMap: Record<string, string> = {
         en: "en-US",
         hi: "hi-IN",
@@ -101,14 +211,12 @@ export default function Home() {
         de: "de-DE",
       };
       utterance.lang = langMap[lang] || "en-US";
-      // Assign voice
       const voices = synth.getVoices();
       utterance.voice = voices.find((v) => v.lang === utterance.lang) || voices[0];
       utterance.onend = () => {
         index++;
-        speakNextSentence(); // Recursively speak next sentence
+        speakNextSentence();
       };
-      // Speak the text
       synth.speak(utterance);
     }
 
@@ -140,12 +248,11 @@ export default function Home() {
 
     recognition.start();
   };
-  // Function to ask a question
   const askQuestionUrl = async () => {
     if (!question.trim()) return alert("Please enter a question.");
     setIsLoading(true);
     try {
-      const res = await fetch(`https://api.harshita.click/ask`, {
+      const res = await fetch(`${API_URL}/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question }),
@@ -158,7 +265,6 @@ export default function Home() {
         toast.success("Answer retrieved!");
         setAnswer(translatedResponse);
         setIsLoading(false);
-        // textToSpeech(translatedResponse, selectedLanguage);
       } else {
         toast.error("Error retrieving answer.");;
       }
@@ -195,58 +301,193 @@ export default function Home() {
     const formData = new FormData();
     pdfs.forEach((file) => formData.append("files", file));
     setIsLoading(true);
+    setIsProcessingPDF(true); // Start processing state
+    setPdfProcessingStatus("Uploading...");
+    
+    // Clear stale answers when new upload starts
+    setAnswerPDF("");
+    setSources("");
+    setQuestion(""); // Also clear question to prevent confusion
 
     try {
       const token = await getToken({ template: "first" });
-              console.log("Clerk Token:", token);  // ✅ Log token for debugging
 
         if (!token) {
             toast.error("Failed to retrieve authentication token.");
             setIsLoading(false);
+            setIsProcessingPDF(false);
             return;
         }
 
-        const response = await axios.post("https://api.harshita.click/upload_pdfs/", formData, {
+        const response = await axios.post(`${API_URL}/upload_pdfs/`, formData, {
             headers: {
-                Authorization: `Bearer ${token}`, // ✅ Pass token in headers
+                Authorization: `Bearer ${token}`,
             },
         });
 
         setTaskId(response.data.task_id);
         setIsLoading(false);
+        setPdfProcessingStatus("Processing...");
         toast.success("PDFs uploaded successfully! Processing started.");
+        checkPDFTaskStatus(response.data.task_id);
     } catch (error) {
         toast.error("Error uploading PDFs. Please try again.");
-        console.error("❌ Upload Error:", error);
+        setIsLoading(false);
+        setIsProcessingPDF(false);
+        setPdfProcessingStatus("");
     }
 };
 
+  const pdfPollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  useEffect(() => {
+    return () => {
+      if (pdfPollIntervalRef.current) {
+        clearInterval(pdfPollIntervalRef.current);
+      }
+    };
+  }, []);
 
-  // ✅ Ask a question
+  const checkPDFTaskStatus = async (taskId: string) => {
+    if (pdfPollIntervalRef.current) {
+      clearInterval(pdfPollIntervalRef.current);
+    }
+    
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_URL}/task_status/${taskId}`);
+        const data = await res.json();
+        setPdfProcessingStatus(data.status);
+        
+        if (data.status === "Completed") {
+          clearInterval(interval);
+          pdfPollIntervalRef.current = null;
+          setIsProcessingPDF(false);
+          setPdfProcessingStatus("Completed");
+          toast.success("PDF processing complete! You can now ask questions.");
+        } else if (data.status === "Failed" || data.status?.startsWith("Failed:")) {
+          clearInterval(interval);
+          pdfPollIntervalRef.current = null;
+          setIsProcessingPDF(false);
+          setPdfProcessingStatus("Failed");
+          toast.error("PDF processing failed. Please try uploading again.");
+        }
+      } catch (error) {
+        clearInterval(interval);
+        pdfPollIntervalRef.current = null;
+        setIsProcessingPDF(false);
+        setPdfProcessingStatus("");
+      }
+    }, 3000);
+    
+    pdfPollIntervalRef.current = interval;
+  };
+
+
   const askQuestion = async () => {
     if (!question.trim()) {
       toast.error("Please enter a question.");
       return;
     }
+    
+    if (isProcessingPDF) {
+      toast.warning("Please wait for PDF processing to complete before asking questions.");
+      return;
+    }
+    
     setIsLoading(true);
     try {
       const token = await getToken({ template: "first" });
 
-      const response = await axios.post("https://api.harshita.click/ask_pdf", { question },{
+      const response = await axios.post(`${API_URL}/ask_pdf`, { question },{
         headers: {
-          Authorization: `Bearer ${token}`, // ✅ Pass token in headers
+          Authorization: `Bearer ${token}`,
       },
       });
       const translatedResponse = await translateText(response.data.answer, selectedLanguage);
       setAnswerPDF(translatedResponse);
-      // setAnswer();
       setSources(response.data.sources || "");
       toast.success("Answer retrieved!");
       setIsLoading(false);
-    } catch (error) {
-      toast.error("Error retrieving answer.");
-      console.error(error);
+    } catch (error: any) {
+      if (error.response?.status === 409) {
+        setIsLoading(false);
+        const errorDetail = error.response?.data?.detail;
+        let taskId: string | null = null;
+        
+        if (typeof errorDetail === 'object' && errorDetail?.task_id) {
+          taskId = errorDetail.task_id;
+        } else if (typeof errorDetail === 'string') {
+          const taskIdMatch = errorDetail.match(/task\(s\)\s+([a-f0-9-]+)/i) || 
+                             errorDetail.match(/task_status\/([a-f0-9-]+)/i);
+          taskId = taskIdMatch ? taskIdMatch[1] : null;
+        }
+        
+        toast.info("⏳ PDF is still processing. We'll automatically retry when ready...", {
+          autoClose: 5000,
+        });
+        
+        if (taskId) {
+          pollAndRetryQuestion(taskId, question);
+        } else {
+          toast.warning("Please wait for processing to complete, then try again.", {
+            autoClose: 8000,
+          });
+        }
+      } else {
+        toast.error("Error retrieving answer.");
+        setIsLoading(false);
+      }
     }
+  };
+
+  const pollAndRetryQuestion = async (taskId: string, questionToRetry: string) => {
+    let pollCount = 0;
+    const maxPolls = 60;
+    
+    const interval = setInterval(async () => {
+      pollCount++;
+      
+      try {
+        const res = await fetch(`${API_URL}/task_status/${taskId}`);
+        const data = await res.json();
+        
+        if (data.status === "Completed") {
+          clearInterval(interval);
+          toast.success("Processing complete! Retrying your question...", { autoClose: 2000 });
+          setIsLoading(true);
+          try {
+            const token = await getToken({ template: "first" });
+            const response = await axios.post(
+              `${API_URL}/ask_pdf`,
+              { question: questionToRetry },
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              }
+            );
+            const translatedResponse = await translateText(response.data.answer, selectedLanguage);
+            setAnswerPDF(translatedResponse);
+            setSources(response.data.sources || "");
+            toast.success("Answer retrieved!");
+            setIsLoading(false);
+          } catch (retryError: any) {
+            toast.error("Error retrieving answer after retry.");
+            setIsLoading(false);
+          }
+        } else if (data.status === "Failed" || data.status?.startsWith("Failed:")) {
+          clearInterval(interval);
+          toast.error("PDF processing failed. Please try uploading again.");
+        } else if (pollCount >= maxPolls) {
+          clearInterval(interval);
+          toast.warning("Processing is taking longer than expected. Please try again later.");
+        }
+      } catch (error) {
+        clearInterval(interval);
+        toast.error("Error checking processing status.");
+      }
+    }, 3000);
   };
 
   return (
@@ -262,7 +503,6 @@ export default function Home() {
               transition={{ duration: 0.8, ease: "easeOut" }}
             >
               Vectra<span className="text-gray-700">Mind</span>
-              {/* Shining Effect */}
               <motion.div
                 className="absolute top-0 left-[-100%] w-[20%] h-full bg-gradient-to-r from-transparent via-white to-transparent opacity-50"
                 animate={{ left: ["-100%", "100%"] }}
@@ -342,6 +582,8 @@ export default function Home() {
                   textToSpeech={textToSpeech}
                   taskId={taskId}
                   askQuestion={askQuestion}
+                  isProcessingPDF={isProcessingPDF}
+                  pdfProcessingStatus={pdfProcessingStatus}
                 />
                 
             )}
